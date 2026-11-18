@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Uploader Ultra Plus</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0c1120;color:#edf2ff}
+*{box-sizing:border-box}body{margin:0;min-height:100vh}header{padding:18px 16px;border-bottom:1px solid #27334d;background:#131a2c;position:sticky;top:0;z-index:3}
+h1{font-size:22px;margin:0}h2{font-size:17px;margin:0 0 13px}p{line-height:1.5}small,.muted{color:#a5b2ca}main{max-width:1050px;margin:auto;padding:16px;display:grid;gap:16px}
+.card{border:1px solid #26344e;background:#141c30;border-radius:16px;padding:18px;min-width:0}
+label{display:block;margin:12px 0 5px;font-size:13px;color:#becbdf}input,textarea,select{display:block;width:100%;background:#0d1526;color:white;border:1px solid #3c4c68;border-radius:10px;padding:12px;font:inherit}
+textarea{min-height:110px;resize:vertical}button{background:#6be1c8;border:0;border-radius:10px;padding:12px 16px;color:#071523;font:inherit;font-weight:700;cursor:pointer}button.secondary{background:#2b3852;color:#e6eeff}button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.pill{font-size:12px;padding:5px 9px;border-radius:30px;border:1px solid #50617b;background:#233048}
+.post{border:1px solid #34435e;border-radius:12px;padding:14px;margin:10px 0;overflow-wrap:anywhere}.post p{white-space:pre-wrap}.note{background:#242f46;padding:12px;border-radius:10px}
+#message{min-height:22px;padding:12px 16px;color:#76e7ce}#login{position:fixed;inset:0;background:#080d19f0;z-index:10;display:grid;place-items:center;padding:15px}#login .card{width:min(100%,420px)}
+@media(max-width:720px){.grid{grid-template-columns:1fr}header{position:static}main{padding:10px}.card{padding:14px}}
+</style></head>
+<body>
+<header><div class="row" style="justify-content:space-between"><div><h1>🚀 Uploader Ultra Plus</h1><small>BIGDAWG · The Curiosity Hub</small></div><span class="pill" id="mode">Checking...</span></div></header>
+<div id="message" role="status"></div>
+<main>
+<section class="grid">
+<div class="card"><h2>Create a post</h2>
+<label for="brand">Brand</label><select id="brand"><option value="bigdawg">BIGDAWG</option><option value="curiosity">The Curiosity Hub</option></select>
+<label for="caption">Post text / caption</label><textarea id="caption" placeholder="Write a useful post..."></textarea>
+<label for="when">Scheduled time (your device timezone)</label><input type="datetime-local" id="when">
+<label for="media">Optional image or MP4</label><input id="media" type="file" accept=".png,.jpg,.jpeg,.webp,.mp4">
+<p class="muted"><small>Max 100 MB. Video requires 60+ seconds, an audio track, and a person to verify actual narration before approval. Live video publishing is not implemented yet.</small></p>
+<button id="create">Save draft</button></div>
+<div class="card"><h2>Publishing controls</h2><div class="note" id="safety">Loading safe-mode status...</div>
+<p class="muted">The app starts in simulation mode: clicking Run does not send any post to Facebook. Facebook Page credentials and explicit server-side live mode are required for real publishing.</p>
+<button id="run">Check due posts</button> <button class="secondary" id="refresh">Refresh</button>
+<h2 style="margin-top:25px">Latest activity</h2><div id="events"><small>Loading...</small></div></div>
+</section>
+<section class="card"><div class="row" style="justify-content:space-between"><h2>Content queue</h2><span class="pill" id="count">0 posts</span></div>
+<label for="filter">Filter</label><select id="filter"><option value="">Both brands</option><option value="bigdawg">BIGDAWG</option><option value="curiosity">The Curiosity Hub</option></select>
+<div id="posts">Loading queue...</div></section>
+</main>
+<div id="login"><div class="card"><h2>🔐 Private dashboard</h2><p class="muted">Enter the admin key configured on the server. Don't paste it into chat or commit it to GitHub.</p>
+<input id="key" type="password" autocomplete="off" placeholder="Admin key"><p></p><button id="unlock">Unlock</button></div></div>
+<script>
+(function(){
+"use strict";
+var KEY="";
+function $(id){return document.getElementById(id)}
+function msg(s){$("message").textContent=s}
+function isoLocal(d){var a=new Date(d.getTime()-d.getTimezoneOffset()*60000);return a.toISOString().slice(0,16)}
+$("when").value=isoLocal(new Date(Date.now()+3600000))
+async function api(path,options){
+ options=options||{};
+ var headers=Object.assign({Authorization:"Bearer "+KEY},options.headers||{});
+ var res=await fetch("/api/"+path,Object.assign({},options,{headers:headers}));
+ var body=await res.json().catch(function(){return {}});
+ if(!res.ok)throw Error(typeof body.detail==="string"?body.detail:JSON.stringify(body.detail||body));
+ return body;
+}
+async function protect(fn){try{await fn()}catch(e){msg("⚠️ "+e.message)}}
+function text(tag,str,cls){var el=document.createElement(tag);el.textContent=str;if(cls)el.className=cls;return el}
+function btn(title,cb){var b=document.createElement("button");b.textContent=title;b.className="secondary";b.onclick=function(){protect(cb)};return b}
+function datefmt(s){try{return new Date(s).toLocaleString()}catch(e){return s}}
+async function refresh(){
+ var both=await Promise.all([api("posts"),api("events"),fetch("/api/health").then(function(x){return x.json()})]);
+ var posts=both[0], events=both[1],health=both[2];
+ $("mode").textContent=health.live_publishing_enabled?"LIVE MODE ENABLED":"SAFE SIMULATION";
+ $("safety").textContent=health.live_publishing_enabled?"Live mode is enabled on the server. Only approved, due text/photo posts may be sent.":"Simulation mode: nothing will be uploaded.";
+ $("count").textContent=posts.length+" posts";
+ var visible=posts.filter(function(p){return !$("filter").value||$("filter").value===p.brand});
+ $("posts").replaceChildren();
+ if(!visible.length)$("posts").append(text("p","No posts here yet.","muted"));
+ visible.forEach(function(p){
+   var wrap=document.createElement("article");wrap.className="post";
+   var head=document.createElement("div");head.className="row";
+   head.append(text("strong",(p.brand==="bigdawg"?"BIGDAWG":"The Curiosity Hub")+" · "+p.status));
+   head.append(text("span",p.media_type,"pill"));wrap.append(head);
+   wrap.append(text("small",datefmt(p.schedule_at),"muted"));
+   wrap.append(text("p",p.text));
+   if(p.media_name)wrap.append(text("small","Media: "+p.media_type+(p.duration?" · "+Number(p.duration).toFixed(1)+" sec":""),"muted"));
+   if(p.error)wrap.append(text("p","Error: "+p.error));
+   var actions=document.createElement("div");actions.className="row";
+   if(p.status==="DRAFT"||p.status==="ERROR")actions.append(btn("Approve",async function(){
+     var verified=false;
+     if(p.media_type==="video")verified=confirm("Have you listened to the ENTIRE video and verified clear natural narration? Without this verification it cannot be approved.");
+     await api("posts/"+p.id+"/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({narration_verified:verified})});msg("Post approved");await refresh();
+   }));
+   if(p.status==="READY")actions.append(btn("Return to draft",async function(){await api("posts/"+p.id+"/hold",{method:"POST"});msg("Returned to draft");await refresh()}));
+   if(p.status==="SUBMITTED")actions.append(btn("I verified it's live",async function(){if(!confirm("Did you open Facebook and confirm that this post is actually published?"))return;await api("posts/"+p.id+"/confirm",{method:"POST"});msg("Post marked verified");await refresh()}));
+   wrap.append(actions);$("posts").append(wrap);
+ });
+ $("events").replaceChildren();
+ events.slice(0,8).forEach(function(e){$("events").append(text("p",e.kind+" · "+datefmt(e.at),"muted"))});
+ if(!events.length)$("events").append(text("p","No activity yet.","muted"));
+}
+$("unlock").onclick=function(){KEY=$("key").value;protect(async function(){await api("brands");$("login").style.display="none";await refresh()})};
+$("refresh").onclick=function(){protect(refresh)};
+$("filter").onchange=function(){protect(refresh)};
+$("run").onclick=function(){protect(async function(){var r=await api("run",{method:"POST"});msg("Run checked "+r.outcomes.length+" posts. Mode: "+(r.live_mode?"LIVE":"SIMULATED"));await refresh()})};
+$("create").onclick=function(){protect(async function(){
+ var media=$("media").files[0], mediaName=null;
+ if(media){msg("Uploading media...");var form=new FormData();form.append("file",media);var stored=await api("media",{method:"POST",body:form});mediaName=stored.media_name}
+ var dt=new Date($("when").value);
+ if(!Number.isFinite(dt.valueOf()))throw Error("Choose a valid scheduled date and time");
+ var result=await api("posts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({brand:$("brand").value,text:$("caption").value,schedule_at:dt.toISOString(),media_name:mediaName})});
+ $("caption").value="";$("media").value="";msg("Saved draft "+result.id);await refresh();
+})};
+})();
+</script></body></html>
