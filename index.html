@@ -474,7 +474,7 @@ function startAcademy(){
  const W=440,H=580,roadX=145,roadW=150,carW=24,carL=44;
  GA.innerHTML=frame('City Driving Academy',`<p class="academy-help">Route: leave the starting bay, pass the crossing and traffic lights, then park inside the marked finish bay. Avoid pedestrians and traffic.</p><canvas id="academyCanvas" width="${W}" height="${H}" aria-label="Top-down driving game"></canvas><div class="academy-dash"><div><strong id="aSpeed">0 km/h</strong>Speed</div><div><strong id="aGear">D</strong>Gear</div><div><strong id="aFault">0</strong>Faults</div></div><p id="aTask" aria-live="polite" style="font-weight:700">Check mirrors before moving off.</p><div class="academy-ctrl"><button id="aLeft">↶ Left</button><button id="aGas" class="pri">▲ Gas</button><button id="aBrake">▼ Brake</button><button id="aRight">Right ↷</button></div><div class="academy-ctrl"><button id="aMirror">🪞 Mirror</button><button id="aIndL">⇦ Signal</button><button id="aIndR">Signal ⇨</button><button id="aPark">🅿 Brake</button></div><div class="row"><button id="aReset">Restart scenario</button><button id="aPause">Pause</button><button id="aSound">Sound off</button></div><p class="academy-help">Top-down simulation with momentum, braking distance, traffic, collision detection and score penalties. It does not replace an instructor or real vehicle practice.</p>`);
  const cv=$('academyCanvas'),c=cv.getContext('2d'),hold={left:false,right:false,gas:false,brake:false};
- let x=roadX+roadW*.28,y=0,heading=0,speed=0,steer=0,dist=0,lap=0,stage=0,score=100,viol=[],signal=0,mirror=-99,parking=false,paused=false,done=false,nowTime=0,old=performance.now(),trafficClock=0,red=false,redSeen=false,stopSeen=false,crossSeen=false,hitCool=0,roadOffset=0,sound=false,finished=false;
+ let x=roadX+roadW*.28,y=0,heading=0,speed=0,steer=0,dist=0,lap=0,stage=0,score=100,viol=[],signal=0,mirror=-99,parking=false,paused=false,done=false,nowTime=0,old=performance.now(),trafficClock=0,red=false,redSeen=false,stopSeen=false,crossSeen=false,stoppedAtStop=false,stoppedAtRed=false,hitCool=0,roadOffset=0,sound=false,finished=false;
  const track=2400, stopAt=420, lightAt=900, crossingAt=1390, bayAt=2120;
  const obstacles=[{d:610,lane:.72,type:'car'},{d:1190,lane:.26,type:'car'},{d:1640,lane:.73,type:'car'}];
  const err=(msg,points=10)=>{if(done||hitCool>0)return;viol.push(msg);score=Math.max(0,score-points);hitCool=1.6;$('aTask').textContent='⚠ '+msg};
@@ -488,10 +488,10 @@ function startAcademy(){
  $('aPause').onclick=()=>{paused=!paused;$('aPause').textContent=paused?'Resume':'Pause'};
  $('aSound').onclick=()=>{sound=!sound;sound?engOn():engOff();$('aSound').textContent=sound?'Sound on':'Sound off'};
  const keyDown=e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if(e.key==='q'||e.key==='Q')$('aIndL').click();if(e.key==='e'||e.key==='E')$('aIndR').click();if(e.key==='m'||e.key==='M')$('aMirror').click();if(e.key===' ')$('aPark').click()};
- addEventListener('keydown',keyDown);const cleanup=()=>{removeEventListener('keydown',keyDown);engOff()};
+ addEventListener('keydown',keyDown);const cleanup=()=>{removeEventListener('keydown',keyDown);Object.keys(hold).forEach(k=>hold[k]=false);engOff()};
  academyCleanup=cleanup; // Leaving a game removes its keyboard listeners.
  const drawCar=(cx,cy,ang,color,braking=false)=>{c.save();c.translate(cx,cy);c.rotate(ang);c.fillStyle='#111827';c.fillRect(-carW*.65,-carL*.37,carW*1.3,carL*.23);c.fillRect(-carW*.65,carL*.14,carW*1.3,carL*.23);c.fillStyle=color;c.fillRect(-carW/2,-carL/2,carW,carL);c.fillStyle='#a5d8ff';c.fillRect(-carW*.37,-carL*.23,carW*.74,carL*.18);c.fillStyle=braking?'#ff3131':'#be123c';c.fillRect(-carW*.4,carL*.38,carW*.23,5);c.fillRect(carW*.17,carL*.38,carW*.23,5);c.restore()};
- const finish=()=>{if(done)return;done=true;cleanup();const stars=score>=90?3:score>=70?2:score>=50?1:0;finish2('academy','City Driving Academy',stars,stars?stars*12:2,`Final score: ${score}/100. ${viol.length} fault(s). ${viol.length?viol.map(v=>'<p>• '+v+'</p>').join(''):'Clean drive!'}<p>Practice controlling speed and position before driving in traffic.</p>`)};
+ const finish=()=>{if(done)return;done=true;cleanup();academyCleanup=null;const stars=score>=90?3:score>=70?2:score>=50?1:0;finish2('academy','City Driving Academy',stars,stars?stars*12:2,`Final score: ${score}/100. ${viol.length} fault(s). ${viol.length?viol.map(v=>'<p>• '+v+'</p>').join(''):'Clean drive!'}<p>Practice controlling speed and position before driving in traffic.</p>`)};
  const step=t=>{if(done)return;let dt=Math.min(.04,(t-old)/1000);old=t;if(!paused){nowTime+=dt;hitCool=Math.max(0,hitCool-dt);trafficClock+=dt;red=trafficClock%19<10;
  const gas=hold.gas||KEY.ArrowUp||KEY.w||KEY.W,brake=hold.brake||KEY.ArrowDown||KEY.s||KEY.S,left=hold.left||KEY.ArrowLeft||KEY.a||KEY.A,right=hold.right||KEY.ArrowRight||KEY.d||KEY.D;
  let accel=gas&&!parking?3.6:0, decel=brake?8.5:parking?12:1.35;speed=Math.max(0,Math.min(23,speed+(accel-decel)*dt));
@@ -499,13 +499,15 @@ function startAcademy(){
  const previous=dist;dist+=Math.cos(heading)*speed*dt*5.2;x+=Math.sin(heading)*speed*dt*5.2;
  if(speed>0.5&&previous<10&&mirror<0)err('Moved off without a mirror check',7);
  if(x<roadX+carW/2+6||x>roadX+roadW-carW/2-6){err('Left the road / struck the kerb',12);x=Math.max(roadX+carW/2+6,Math.min(roadX+roadW-carW/2-6,x));speed*=.25}
+ if(dist>stopAt-65&&dist<stopAt-4&&speed<0.4)stoppedAtStop=true;
+ if(dist>lightAt-65&&dist<lightAt-4&&red&&speed<0.4)stoppedAtRed=true;
  const crossing=(mark)=>previous<mark&&dist>=mark;
- if(crossing(stopAt)){stopSeen=true;if(speed>1.5)err('Did not stop at STOP line',15)}
+ if(crossing(stopAt)){stopSeen=true;if(!stoppedAtStop)err('STOP sign: a complete stop is required',15)}
  if(crossing(lightAt)){redSeen=true;if(red)err('Entered junction on a red light',20)}
  if(crossing(crossingAt)){crossSeen=true;if(speed>2.8)err('Too fast at pedestrian crossing',12)}
  if(speed*3.6>50){err('Speeding over 50 km/h',6)}
  for(const o of obstacles){const ox=roadX+roadW*o.lane;if(Math.abs(dist-o.d)<32&&Math.abs(x-ox)<carW+12){err('Collision with another vehicle',20);speed=0;dist=Math.max(0,o.d-35)}}
- if(dist>=bayAt){stage=4;const inBay=x<roadX+roadW*.44&&x>roadX+14;if(dist>=bayAt+80){if(speed<1.4&&parking&&inBay){finish();return}else if(dist>track){err('Missed the parking bay',20);finish();return}}}
+ if(dist>=bayAt){stage=4;const inBay=x<roadX+roadW*.44&&x>roadX+carW/2+8;if(dist>=bayAt+80){if(speed<1.4&&parking&&inBay){finish();return}else if(dist>track){err('Missed the parking bay',20);finish();return}}}
  else stage=dist<stopAt?0:dist<lightAt?1:dist<crossingAt?2:3;
  if(dist>=stopAt-85&&dist<stopAt&&speed>1.5)$('aTask').textContent='STOP line ahead. Brake early.';
  else if(dist>=lightAt-85&&dist<lightAt)$('aTask').textContent=red?'Traffic light RED — stop.':'Traffic light GREEN — proceed if clear.';
